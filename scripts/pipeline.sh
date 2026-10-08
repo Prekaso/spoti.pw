@@ -72,18 +72,43 @@ if [ ! -f "$ROOT/tweak/Sources/Shared/Flags/SGFlagList.m" ]; then
   "$ROOT/scripts/extract-flags.py" "$IN"
 fi
 
-echo "==> building tweak"
-export THEOS
-# Theos resolves its toolchain through `xcrun -sdk iphoneos`, which needs full Xcode. With only the
-# Command Line Tools installed, name the tools directly instead.
-if ! xcrun -sdk iphoneos --find clang >/dev/null 2>&1; then
-  export TARGET_CC=clang TARGET_CXX=clang++ TARGET_LD=clang++ \
-         TARGET_STRIP=strip TARGET_LIPO=lipo TARGET_CODESIGN_ALLOCATE=codesign_allocate TARGET_LIBTOOL=libtool
+if [ -n "${OFFICIAL_TWEAK_DEB:-}" ]; then
+  echo "==> using official precompiled tweak"
+
+  TWEAK_DEB="$OFFICIAL_TWEAK_DEB"
+
+  [ -f "$TWEAK_DEB" ] || {
+    echo "Official tweak .deb not found: $TWEAK_DEB" >&2
+    exit 1
+  }
+
+  [ "$(dpkg-deb -f "$TWEAK_DEB" Package)" = "com.spotipw" ] || {
+    echo "Unexpected tweak package" >&2
+    exit 1
+  }
+
+  [ "$(dpkg-deb -f "$TWEAK_DEB" Version)" = "0.50.0" ] || {
+    echo "Unexpected tweak version" >&2
+    exit 1
+  }
+
+  echo "==> official tweak: $TWEAK_DEB"
+else
+  echo "==> building tweak from source"
+  export THEOS
+
+  if ! xcrun -sdk iphoneos --find clang >/dev/null 2>&1; then
+    export TARGET_CC=clang TARGET_CXX=clang++ TARGET_LD=clang++ \
+           TARGET_STRIP=strip TARGET_LIPO=lipo \
+           TARGET_CODESIGN_ALLOCATE=codesign_allocate \
+           TARGET_LIBTOOL=libtool
+  fi
+
+  env -u MAKELEVEL gmake -C "$ROOT/tweak" clean package >/dev/null
+
+  TWEAK_DEB="$(ls -t "$ROOT"/tweak/packages/*.deb | head -1)"
+  echo "==> compiled tweak: $TWEAK_DEB"
 fi
-# Theos builds its Swift support tools only at MAKELEVEL 0, and `make release` hands this script MAKELEVEL 1.
-env -u MAKELEVEL gmake -C "$ROOT/tweak" clean package >/dev/null
-TWEAK_DEB="$(ls -t "$ROOT"/tweak/packages/*.deb | head -1)"
-echo "    $TWEAK_DEB"
 
 FILES=("$TWEAK_DEB")
 [ "$WITH_FLEX" = 1 ] && FILES+=("$FLEX_DEB")
