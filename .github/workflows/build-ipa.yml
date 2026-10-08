@@ -45,7 +45,31 @@ jobs:
           curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
-      - run: make release
+      - name: Download official spoti.pw v0.50.0 tweak
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p official-deb
+          gh release download v0.50.0 \
+            --repo skopevoj/spoti.pw \
+            --pattern '*.deb' \
+            --dir official-deb
+
+          DEB="$(find official-deb -maxdepth 1 -name '*.deb' -type f -print -quit)"
+          test -n "$DEB" || {
+            echo "::error::Official tweak package not found"
+            exit 1
+          }
+
+          test "$(dpkg-deb -f "$DEB" Package)" = "com.spotipw"
+          test "$(dpkg-deb -f "$DEB" Version)" = "0.50.0"
+
+          echo "OFFICIAL_TWEAK_DEB=$GITHUB_WORKSPACE/$DEB" >> "$GITHUB_ENV"
+          echo "Using official tweak: $DEB"
+
+      - name: Build IPA with official tweak
+        run: make release
+
 
       - uses: actions/upload-artifact@v5
         if: inputs.upload_method != 'filebin'
